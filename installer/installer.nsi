@@ -9,9 +9,9 @@
 ; ---- General ----
 Name "WINQ-EMU Alpha 10"
 OutFile "..\WINQ-EMU-Alpha10-Setup.exe"
-InstallDir "C:\WINQ-EMU"
+InstallDir "$LOCALAPPDATA\Programs\WINQ-EMU"
 InstallDirRegKey HKCU "Software\WINQ-EMU" "InstallDir"
-RequestExecutionLevel admin
+RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
 ; ---- Version Info ----
