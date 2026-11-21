@@ -108,21 +108,60 @@ jobs:
             throw 'Windows launcher was not produced'
           }
 
+      - name: Validate staging script syntax
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/stage-qemu.sh
+          echo "Staging script syntax OK"
+
       - name: Stage QEMU, firmware, and recursive UCRT64 DLL dependencies
         run: |
           set -euo pipefail
-          mkdir -p installer/bin/share installer/icons
-          cp launcher/winq-emu.ico installer/icons/winq-emu.ico
+          bash .github/scripts/stage-qemu.sh
 
-          # Use the built fork directly, rather than depending on Meson install.
-          # The NSIS installer expects binaries in installer/bin and the ROMs
-          # in installer/bin/share, exactly as in upstream's installer.nsi.
-          for exe in qemu-system-x86_64.exe qemu-system-x86_64w.exe qemu-img.exe; do
-            cp "_deps/qemu/build/$exe" installer/bin/
-          done
-          cp /ucrt64/bin/libvirglrenderer-1.dll installer/bin/
+      - name: Smoke test assembled executables (no GPU/VM required)
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/installer/bin:$PATH"
+          installer/bin/qemu-system-x86_64.exe --version
+          installer/bin/qemu-img.exe --version
+          installer/bin/qemu-system-x86_64.exe -accel help > accelerators.txt
+          grep -qi whpx accelerators.txt
+          installer/bin/qemu-system-x86_64.exe -device help > devices.txt
+          grep -q 'virtio-vga-gl' devices.txt
 
-          # Build-generated and source firmware are not under
-          # /ucrt64/share/qemu on this QEMU fork. Stage them explicitly.
-          shopt -s nullglob
-          for firmware in _deps/qemu/pc-bios/*.{bin,rom,fd}; do
+      - name: Create portable ZIP and NSIS installer
+        run: |
+          set -euo pipefail
+          mkdir -p dist/WINQ-EMU/vm
+          cp -a installer/bin dist/WINQ-EMU/
+          cp installer/WINQ-EMU.exe installer/launch-vm.bat \
+             installer/README.txt installer/LICENSE.txt dist/WINQ-EMU/
+          cp installer/icons/winq-emu.ico dist/WINQ-EMU/winq-emu.ico
+          printf '%s\n' \
+            "GUI: ${GITHUB_SHA}" \
+            "QEMU: $(git -C _deps/qemu rev-parse HEAD)" \
+            "virglrenderer: $(git -C _deps/virglrenderer rev-parse HEAD)" \
+            > dist/WINQ-EMU/BUILD-INFO.txt
+          printf '%s\n' 'Put your Linux qcow2 image here as disk.qcow2.' \
+            > dist/WINQ-EMU/vm/README.txt
+          (cd dist && zip -qr WINQ-EMU-Alpha10-Portable.zip WINQ-EMU)
+          (cd installer && makensis installer.nsi)
+          test -s WINQ-EMU-Alpha10-Setup.exe
+          test -s dist/WINQ-EMU-Alpha10-Portable.zip
+
+      - name: Upload portable distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: WINQ-EMU-Alpha10-Portable
+          path: dist/WINQ-EMU-Alpha10-Portable.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: WINQ-EMU-Alpha10-Installer
+          path: WINQ-EMU-Alpha10-Setup.exe
+          if-no-files-found: error
+          retention-days: 14
